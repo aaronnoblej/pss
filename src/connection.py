@@ -2,7 +2,7 @@
 # This includes LAN and bluetooth connections
 
 import bluetooth as bt
-import socket, time, ipaddress, os
+import socket, time, ipaddress, os, subprocess
 from threading import Thread
 
 service_name = "PSS Service"
@@ -18,6 +18,10 @@ class Server:
             self.socket = bt.BluetoothSocket(bt.RFCOMM)
         else:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    
+    def get_subnet(self):
+        sub = self.host.split(sep='.')
+        return f'{sub[0]}.{sub[1]}.{sub[2]}.'
 
     def start(self):
         if self.type == 'Bluetooth':
@@ -39,14 +43,8 @@ class Server:
             self.socket.bind((self.host, self.port))
             print("Listening for connections on port",self.port)
             self.socket.listen(1)
-            return
-
-            client_socket,address = self.socket.accept()
-            print('Accepted connection from', address)
-            data = client_socket.recv(1024)
-            print('Received [%s]' % data)
-            client_socket.close()
-            self.socket.close()
+            acceptor = Thread(target=self.accept_scans, daemon=True)
+            acceptor.start()
 
     # Uses network adapters to find devices hosting the PSS service 
     def scan(self, duration=5):
@@ -59,32 +57,70 @@ class Server:
             return active_services
         elif self.type == "LAN":
             active_services = []
-            time_begin = time.time() 
+            time_begin = time.time()
+            subnet = self.get_subnet()
             #Scan the port, add any found devices into active_services
             while True:            
                 for i in range(2,255):
                     if time.time() - time_begin >= duration:
                         return active_services
-                    addr = "192.168.1."+str(i)
+                    addr = subnet+str(i)
                     print(addr)
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     sock.settimeout(1)
                     res = sock.connect_ex((addr,self.port))
-                    print(res)
                     sock.close()
+                    print(res)
                     result = res == 0
                     if result:
                         print("Device found at", addr+":"+str(self.port))
                         active_services.append(socket.gethostbyaddr(addr))
         else:
             print("No connection.")
+    
+    def accept_scans(self):
+        print('True!')
+        while True:
+            client_socket,address = self.socket.accept()
+            print('Accepted connection from', address)
+            data = client_socket.recv(1024)
+            print('Received [%s]' % data)
+            #client_socket.close()
+            #self.socket.close()
 
+def tester():
+    net_addr = '192.168.1.0/24'
+    ip_net = ipaddress.ip_network(net_addr)
+
+    # Get all hosts on that network
+    all_hosts = list(ip_net.hosts())
+    print(all_hosts)
+
+    # Configure subprocess to hide the console window
+    info = subprocess.STARTUPINFO()
+    info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    info.wShowWindow = subprocess.SW_HIDE
+
+    # For each IP address in the subnet, 
+    # run the ping command with subprocess.popen interface
+    for i in range(len(all_hosts)):
+        output = subprocess.Popen(['ping', '-n', '1', '-w', '10', str(all_hosts[i])], stdout=subprocess.PIPE, startupinfo=info).communicate()[0]
+        
+        if "Destination host unreachable" in output.decode('utf-8'):
+            print(str(all_hosts[i]), "is Offline")
+        elif "Request timed out" in output.decode('utf-8'):
+            print(str(all_hosts[i]), "is Offline")
+        else:
+            print(str(all_hosts[i]), "is Online")
 
 # DRIVER CODE
 
 lan = Server('LAN', 14572)
 lan.start()
+
 lan.scan()
+
+
 
 #test for retrieiving devices on LAN, refer to https://stackoverflow.com/questions/207234/list-of-ip-addresses-hostnames-from-local-network-in-python
 

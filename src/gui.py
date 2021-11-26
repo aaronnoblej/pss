@@ -4,7 +4,7 @@
 #--------------------------------------------------------------------------------------
 
 import PySimpleGUI as sg
-import os
+import os, connection
 
 from PySimpleGUI.PySimpleGUI import LISTBOX_SELECT_MODE_BROWSE, LISTBOX_SELECT_MODE_EXTENDED, LISTBOX_SELECT_MODE_MULTIPLE, LISTBOX_SELECT_MODE_SINGLE
 
@@ -16,6 +16,9 @@ BUTTON_HEIGHT = 2 #This is not pixels, this is the default units provided by the
 connection_type = 'Bluetooth'
 selected_color = '#D3D3D3'
 deselected_color = '#FFFFFF'
+
+lan_port = 14572
+bt_port = 4
 
 def get_image_path(filename):
     os.chdir(__file__+'\\..\\img')
@@ -66,7 +69,10 @@ def titleScreen():
                 window['-OPT_LAN_TEXT-'].update(background_color=deselected_color)
                 window['-OPT_LAN_TEXT-'].ParentRowFrame.config(background=deselected_color)
                 window['-CONNECTION_OPTIONS_LAN-'].Widget.config(background=deselected_color)
-        elif event == '-OPT_LAN-': #Updates colors if LAN is selected
+                # Create a Bluetooth server so others can see that this device is available
+                #serv = connection.Server('Bluetooth', bt_port)
+                #serv.start()
+        elif event == '-OPT_LAN-': #Updates colors if LAN is selected, opens a LAN server
             if connection_type != 'LAN':
                 connection_type = 'LAN'
                 window['-OPT_LAN-'].update(button_color=selected_color)
@@ -79,6 +85,9 @@ def titleScreen():
                 window['-OPT_BT_TEXT-'].update(background_color=deselected_color)
                 window['-OPT_BT_TEXT-'].ParentRowFrame.config(background=deselected_color)
                 window['-CONNECTION_OPTIONS_BT-'].Widget.config(background=deselected_color)
+                # Create a LAN server so others can see that this device is available
+                serv = connection.Server('LAN', lan_port)
+                serv.start()
         elif event == 'Send a Share Request':
             window.close()
             findDevicesScreen()
