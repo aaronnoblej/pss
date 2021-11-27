@@ -2,22 +2,30 @@
 # This includes LAN and bluetooth connections
 
 import bluetooth as bt
-import socket, time, ipaddress, os, subprocess
+import socket, time, virtualmonitor
 from threading import Thread
+from streamserver import Stream
 
 service_name = "PSS Service"
 service_uuid  = "5feb8726-447b-42ed-b1f5-98570a97f5e5" #obtained from an online UUID generator
-SCAN_PORT = 9184
 
 class Server:
     def __init__(self, type, port) -> None:
         self.host = socket.gethostbyname(socket.gethostname())
         self.type = type
         self.port = port
+        self.found_devices = []
+        self.scanning = False
+        self.streaming = False
+        self.requests = []
         if type == 'Bluetooth':
             self.socket = bt.BluetoothSocket(bt.RFCOMM)
         else:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
+        # Create a screen-share server so people can tune in
+        pss_serv = Thread(target=self.start_stream_server, daemon=True)
+        pss_serv.start()
     
     def get_subnet(self):
         sub = self.host.split(sep='.')
@@ -28,7 +36,7 @@ class Server:
             # Allow for devices to find this one
             self.socket.bind(('',self.port)) # NEEDS TO CHANGE TO A BLUETOOTH ADDRESS
             print("Listening for connections on port",self.port)
-            self.socket.listen(1)
+            self.socket.listen(5)
 
             #bt.advertise_service(bt_socket, service_name, service_uuid)
             client_socket,address = self.socket.accept()
@@ -42,83 +50,90 @@ class Server:
             #Bind socket to a port number and listen on that port
             self.socket.bind((self.host, self.port))
             print("Listening for connections on port",self.port)
-            self.socket.listen(1)
+            self.socket.listen(5)
             acceptor = Thread(target=self.accept_scans, daemon=True)
             acceptor.start()
+    
+    def stop(self):
+        self.socket.close()
+        del self
 
     # Uses network adapters to find devices hosting the PSS service 
-    def scan(self, duration=5):
+    def scan(self): #client
+        self.scanning = True
         if self.type == "Bluetooth":
-            active_services = bt.find_service(name=service_name, uuid=service_uuid)
-            if len(active_services) == 0:
+            self.found_devices = bt.find_service(name=service_name, uuid=service_uuid)
+            if len(self.found_devices) == 0:
                 print('No other users found')
                 return None
-            print(len(active_services),'found hosting PSS service.')
-            return active_services
+            print(len(self.found_devices),'found hosting PSS service.')
+            return self.found_devices
         elif self.type == "LAN":
-            active_services = []
             time_begin = time.time()
             subnet = self.get_subnet()
             #Scan the port, add any found devices into active_services
             while True:            
-                for i in range(2,255):
-                    if time.time() - time_begin >= duration:
-                        return active_services
+                for i in range(22,255):
+                    if not self.scanning:
+                        # Clear the found devices
+                        self.found_devices.clear()
+                        return
                     addr = subnet+str(i)
-                    print(addr)
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.settimeout(1)
+                    sock.settimeout(0.1)
                     res = sock.connect_ex((addr,self.port))
                     sock.close()
-                    print(res)
                     result = res == 0
                     if result:
+                        dev = socket.gethostbyaddr(addr)[0]
+                        if dev in self.found_devices: # or dev == socket.gethostname():
+                            continue
                         print("Device found at", addr+":"+str(self.port))
-                        active_services.append(socket.gethostbyaddr(addr))
+                        self.found_devices.append(dev)
         else:
             print("No connection.")
     
-    def accept_scans(self):
-        print('True!')
+    def accept_scans(self): #server
         while True:
             client_socket,address = self.socket.accept()
             print('Accepted connection from', address)
-            data = client_socket.recv(1024)
-            print('Received [%s]' % data)
-            #client_socket.close()
-            #self.socket.close()
+            msg = client_socket.recv(1024)
+            if msg.decode() != '':
+                print('WE HAVE RECEIVED A REQUEST')
+                self.requests.append(msg.decode())
+            else:
+                print('Scanned only, closing connection socket')
+                client_socket.close()
+    
+    def start_stream_server(self):
+        serv = Stream(self.host)
+        self.streaming = True
+        serv.begin_stream()
+        self.streaming = False
 
-def tester():
-    net_addr = '192.168.1.0/24'
-    ip_net = ipaddress.ip_network(net_addr)
-
-    # Get all hosts on that network
-    all_hosts = list(ip_net.hosts())
-    print(all_hosts)
-
-    # Configure subprocess to hide the console window
-    info = subprocess.STARTUPINFO()
-    info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-    info.wShowWindow = subprocess.SW_HIDE
-
-    # For each IP address in the subnet, 
-    # run the ping command with subprocess.popen interface
-    for i in range(len(all_hosts)):
-        output = subprocess.Popen(['ping', '-n', '1', '-w', '10', str(all_hosts[i])], stdout=subprocess.PIPE, startupinfo=info).communicate()[0]
-        
-        if "Destination host unreachable" in output.decode('utf-8'):
-            print(str(all_hosts[i]), "is Offline")
-        elif "Request timed out" in output.decode('utf-8'):
-            print(str(all_hosts[i]), "is Offline")
-        else:
-            print(str(all_hosts[i]), "is Online")
+    def get_stream(self, server_addr):
+        virtualmonitor.stream_from(server_addr)
+    
+    def send_request(self, client_ip): #server
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        result = s.connect_ex((client_ip, self.port))
+        if result != 0:
+            print(f'Cannot connect to {client_ip}')
+            return
+        msg = socket.gethostbyaddr(self.host)[0]
+        s.send(msg.encode())
+        print('Sent request!')
+    
+    def get_client_addr(self, client_name): #server
+        return socket.gethostbyname(client_name)
 
 # DRIVER CODE
 
-lan = Server('LAN', 14572)
-lan.start()
+# lan = Server('LAN', 14572)
+# lan.start()
+# lan.scan()
 
-lan.scan()
+# print(lan.found_devices)
 
 
 
