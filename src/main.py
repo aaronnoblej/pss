@@ -5,14 +5,14 @@
 
 import PySimpleGUI as sg
 from threading import Thread
-import os, connection, socket
+import os, connection, socket, connection, platform
 
-WIDTH = 600 #500 orignally
-HEIGHT = 420 #350 originally
+WIDTH = 550 #500 orignally
+HEIGHT = 400 #350 originally
 BUTTON_WIDTH = 30
 BUTTON_HEIGHT = 2 #This is not pixels, this is the default units provided by the pysimplegui interface
 
-connection_type = 'Bluetooth'
+connection_type = 'LAN'
 selected_color = '#D3D3D3'
 deselected_color = '#FFFFFF'
 
@@ -25,7 +25,7 @@ def get_image_path(filename):
     return os.getcwd()+'\\'+filename
 
 def get_requests():
-    if isinstance(server, connection.Server):
+    if isinstance(server, connection.Server): #checks if server is running
         if len(server.requests) > 0: 
             request = server.requests.pop(0)
             status = request_popup(request)
@@ -65,10 +65,16 @@ def titleScreen():
             break
         elif event == '-OPT_BT-': #Updates colors if Bluetooth is selected
             if connection_type != 'Bluetooth':
-                if isinstance(server,connection.Server) and server.type == 'LAN':
-                    print('Yep')
-                    server = None #stop current server because we have now changed type
+
+                # BLUETOOTH MODULE CURRENTLY DOESN'T WORK ON WINDOWS
+                if platform.system() == 'Windows':
+                    sg.popup('Bluetooth mode is currently not supported on your operating system.', background_color='white', text_color='black', font='Century 10', title='Sorry')
+                    continue
+
                 connection_type = 'Bluetooth'
+                if connection.Server.active:
+                    server.stop()
+                    server = None
                 window['-OPT_BT-'].update(button_color=selected_color)
                 window['-OPT_BT-'].ParentRowFrame.config(background=selected_color)
                 window['-OPT_BT_TEXT-'].update(background_color=selected_color)
@@ -80,11 +86,14 @@ def titleScreen():
                 window['-OPT_LAN_TEXT-'].ParentRowFrame.config(background=deselected_color)
                 window['-CONNECTION_OPTIONS_LAN-'].Widget.config(background=deselected_color)
                 # Create a Bluetooth server so others can see that this device is available
-                #serv = connection.Server('Bluetooth', bt_port)
-                #serv.start()
+                server = connection.Server('Bluetooth', bt_port)
+                server.start()
         elif event == '-OPT_LAN-': #Updates colors if LAN is selected, opens a LAN server
             if connection_type != 'LAN':
                 connection_type = 'LAN'
+                if connection.Server.active:
+                    server.stop()
+                    server = None
                 window['-OPT_LAN-'].update(button_color=selected_color)
                 window['-OPT_LAN-'].ParentRowFrame.config(background=selected_color)
                 window['-OPT_LAN_TEXT-'].update(background_color=selected_color)
@@ -106,7 +115,7 @@ def titleScreen():
             sg.Popup('Not yet implemented', title='Settings', background_color='white', text_color='black')
         
         # This must be put within each GUI loop - using another thread immensely slows down the program
-        #get_requests()
+        get_requests()
         
         print(connection_type)
     window.close()
@@ -118,9 +127,10 @@ def findDevicesScreen():
         [sg.Button('Send screen request', key ='-SEND_BUTTON-', font='Century 12', button_color=('white', '#0083FF'), border_width=1, size=(30,1), disabled=True, disabled_button_color=('white','#BEBEBE'), use_ttk_buttons=True)],
         [sg.Button('Back', button_color=('black','white')), sg.Button('Quit', button_color=('black','white'))]
     ]
+    t = get_image_path('loading.gif')
     layout = [
                 [sg.Text(searchText, font='Century 12', background_color='white', text_color='black', key='-SEARCHING-')],
-                [sg.Image(filename=get_image_path('loading.gif'), key='-LOADING-')],
+                [sg.Image(filename=get_image_path('loading.gif'), key='-LOADING-', background_color='white')],
                 [sg.Listbox(server.found_devices, size=(50,10), select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED, key='-DEVICES-')],
                 [sg.Column(buttons, background_color='white', element_justification='c')]
             ]
@@ -132,9 +142,9 @@ def findDevicesScreen():
     scanner.start()
 
     device_length = 0
-
     while True:
-        event, values = window.read(timeout=100)
+        event, values = window.read(timeout=10)
+        window['-LOADING-'].UpdateAnimation(get_image_path('loading.gif'))
         if(len(server.found_devices) != device_length):
             device_length = len(server.found_devices)
             window['-DEVICES-'].update(server.found_devices)
@@ -180,3 +190,4 @@ def request_popup(requester_name):
 
 if __name__ == '__main__':
     titleScreen()
+    if connection.Server.active: server.stop()

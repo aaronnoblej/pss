@@ -10,22 +10,23 @@ service_name = "PSS Service"
 service_uuid  = "5feb8726-447b-42ed-b1f5-98570a97f5e5" #obtained from an online UUID generator
 
 class Server:
+    active = False
     def __init__(self, type, port) -> None:
         self.host = socket.gethostbyname(socket.gethostname())
         self.type = type
         self.port = port
         self.found_devices = []
         self.scanning = False
-        self.streaming = False
         self.requests = []
+        self.stream = None
         if type == 'Bluetooth':
             self.socket = bt.BluetoothSocket(bt.RFCOMM)
         else:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        
+        Server.active = True
+
         # Create a screen-share server so people can tune in
-        pss_serv = Thread(target=self.start_stream_server, daemon=True)
-        pss_serv.start()
+        self.start_stream_server()
     
     def get_subnet(self):
         sub = self.host.split(sep='.')
@@ -37,7 +38,7 @@ class Server:
             self.socket.bind(('',self.port)) # NEEDS TO CHANGE TO A BLUETOOTH ADDRESS
             print("Listening for connections on port",self.port)
             self.socket.listen(5)
-
+            return
             #bt.advertise_service(bt_socket, service_name, service_uuid)
             client_socket,address = self.socket.accept()
             print('Accepted connection from', address)
@@ -46,17 +47,12 @@ class Server:
             client_socket.close()
             self.socket.close()
         elif self.type == 'LAN':
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             #Bind socket to a port number and listen on that port
             self.socket.bind((self.host, self.port))
             print("Listening for connections on port",self.port)
             self.socket.listen(5)
             acceptor = Thread(target=self.accept_scans, daemon=True)
             acceptor.start()
-    
-    def stop(self):
-        self.socket.close()
-        del self
 
     # Uses network adapters to find devices hosting the PSS service 
     def scan(self): #client
@@ -73,10 +69,11 @@ class Server:
             subnet = self.get_subnet()
             #Scan the port, add any found devices into active_services
             while True:            
-                for i in range(22,255):
-                    if not self.scanning:
+                for i in range(2,255):
+                    if not self.scanning or not Server.active:
                         # Clear the found devices
                         self.found_devices.clear()
+                        print('No longer scanning.')
                         return
                     addr = subnet+str(i)
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -86,7 +83,7 @@ class Server:
                     result = res == 0
                     if result:
                         dev = socket.gethostbyaddr(addr)[0]
-                        if dev in self.found_devices: # or dev == socket.gethostname():
+                        if dev in self.found_devices:# or dev == socket.gethostname():
                             continue
                         print("Device found at", addr+":"+str(self.port))
                         self.found_devices.append(dev)
@@ -94,22 +91,29 @@ class Server:
             print("No connection.")
     
     def accept_scans(self): #server
-        while True:
-            client_socket,address = self.socket.accept()
+        while Server.active:
+            try:
+                client_socket,address = self.socket.accept()
+            except OSError: break
             print('Accepted connection from', address)
             msg = client_socket.recv(1024)
             if msg.decode() != '':
-                print('WE HAVE RECEIVED A REQUEST')
+                print('YOU HAVE RECEIVED A REQUEST')
                 self.requests.append(msg.decode())
             else:
                 print('Scanned only, closing connection socket')
                 client_socket.close()
+        
+        print('No longer accepting scans...')
+    
+    def stop(self):
+        Server.active = False #causes all threads to stop
+        self.socket.close()
+        self.stream.stop_stream()
     
     def start_stream_server(self):
-        serv = Stream(self.host)
-        self.streaming = True
-        serv.begin_stream()
-        self.streaming = False
+        self.stream = Stream(self.host)
+        self.stream.begin_stream()
 
     def get_stream(self, server_addr):
         virtualmonitor.stream_from(server_addr)
