@@ -26,7 +26,8 @@ class Server:
         Server.active = True
 
         # Create a screen-share server so people can tune in
-        self.start_stream_server()
+        streamer = Thread(target=self.start_stream_server, daemon=True)
+        streamer.start()
     
     def get_subnet(self):
         sub = self.host.split(sep='.')
@@ -38,8 +39,8 @@ class Server:
             self.socket.bind(('',self.port)) # NEEDS TO CHANGE TO A BLUETOOTH ADDRESS
             print("Listening for connections on port",self.port)
             self.socket.listen(5)
-            return
-            #bt.advertise_service(bt_socket, service_name, service_uuid)
+            
+            bt.advertise_service(self.socket, service_name, service_uuid)
             client_socket,address = self.socket.accept()
             print('Accepted connection from', address)
             data = client_socket.recv(1024)
@@ -65,7 +66,6 @@ class Server:
             print(len(self.found_devices),'found hosting PSS service.')
             return self.found_devices
         elif self.type == "LAN":
-            time_begin = time.time()
             subnet = self.get_subnet()
             #Scan the port, add any found devices into active_services
             while True:            
@@ -83,7 +83,7 @@ class Server:
                     result = res == 0
                     if result:
                         dev = socket.gethostbyaddr(addr)[0]
-                        if dev in self.found_devices:# or dev == socket.gethostname():
+                        if dev in self.found_devices or dev == socket.gethostname():
                             continue
                         print("Device found at", addr+":"+str(self.port))
                         self.found_devices.append(dev)
@@ -109,11 +109,11 @@ class Server:
     def stop(self):
         Server.active = False #causes all threads to stop
         self.socket.close()
-        self.stream.stop_stream()
+        #self.stream.stop_stream()
     
     def start_stream_server(self):
         self.stream = Stream(self.host)
-        self.stream.begin_stream()
+        self.stream.start_stream()
 
     def get_stream(self, server_addr):
         virtualmonitor.stream_from(server_addr)
@@ -130,22 +130,3 @@ class Server:
     
     def get_client_addr(self, client_name): #server
         return socket.gethostbyname(client_name)
-
-# DRIVER CODE
-
-# lan = Server('LAN', 14572)
-# lan.start()
-# lan.scan()
-
-# print(lan.found_devices)
-
-
-
-#test for retrieiving devices on LAN, refer to https://stackoverflow.com/questions/207234/list-of-ip-addresses-hostnames-from-local-network-in-python
-
-#create_bluetooth_server(bt.PORT_ANY)
-
-
-# NOW NEED TO SET UP A CLIENT SIDE, WHICH IS USED FOR SENDING THE SCANS (CLIENT WILL SEND PINGS TO THE HOST SERVERS, WHO SHOULD RESPOND IF CONNECTION IS SUCCESSFUL)
-# DEVICE ADDED TO LIST AND SHOW UP ON GUI
-# SET UP CONTINUOUS SCANNING, WHICH ENDS ONCE WE GO BACK
