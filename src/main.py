@@ -7,8 +7,8 @@ import PySimpleGUI as sg
 from threading import Thread
 import os, connection, socket, connection, platform
 
-WIDTH = 550 #500 orignally
-HEIGHT = 400 #350 originally
+WIDTH =  500 #orignally #550
+HEIGHT = 350 #originally 400
 BUTTON_WIDTH = 30
 BUTTON_HEIGHT = 2 #This is not pixels, this is the default units provided by the pysimplegui interface
 
@@ -29,8 +29,9 @@ def get_requests():
         if len(server.requests) > 0: 
             request = server.requests.pop(0)
             status = request_popup(request)
+            print('Accepted') if status else print('Denied')
             if status: #if accepted
-                server.get_stream(socket.gethostbyname(request))
+                server.get_stream(server.get_client_addr(request))
 
 def titleScreen():
     # Title screen appears upon running the software - user interface of the program
@@ -59,7 +60,7 @@ def titleScreen():
 
     # Event loop for processing user inputs and values
     while True:
-        event, values = window.read()
+        event, values = window.read(timeout=100)
         #Close window
         if event in (sg.WIN_CLOSED, 'Quit'):
             break
@@ -68,7 +69,7 @@ def titleScreen():
 
                 # BLUETOOTH MODULE CURRENTLY DOESN'T WORK ON WINDOWS
                 if platform.system() == 'Windows':
-                    sg.popup('Bluetooth mode is currently not supported on your operating system.', background_color='white', text_color='black', font='Century 10', title='Sorry')
+                    sg.popup('Bluetooth mode is currently not supported on your operating system (blame pybluez).', background_color='white', text_color='black', font='Century 10', title='Sorry')
                     continue
 
                 connection_type = 'Bluetooth'
@@ -112,12 +113,13 @@ def titleScreen():
             findDevicesScreen()
             return
         elif event == 'Settings':
-            sg.Popup('Not yet implemented', title='Settings', background_color='white', text_color='black')
+            #sg.Popup('Not yet implemented', title='Settings', background_color='white', text_color='black')
+            window.close()
+            settings()
         
         # This must be put within each GUI loop - using another thread immensely slows down the program
         get_requests()
-        
-        print(connection_type)
+
     window.close()
 
 def findDevicesScreen():
@@ -161,7 +163,9 @@ def findDevicesScreen():
             window['-SEND_BUTTON-'].update(disabled=True)
         if event == '-SEND_BUTTON-':
             for client in values['-DEVICES-']:
-                server.send_request(server.get_client_addr(client))
+                r = server.send_request(server.get_client_addr(client))
+                if r == -1:
+                    sg.popup(f'Could not send a request to {client}.', background_color='white', text_color='black')
 
         # This must be put within each GUI loop - using another thread immensely slows down the program
         get_requests()
@@ -186,8 +190,25 @@ def request_popup(requester_name):
             window.close()
             return False
     window.close()
-        
+
+def settings():
+    layout = [
+                [sg.Text('Settings', font='Century 20', background_color='white', text_color='black')],
+                [sg.Button('Back', button_color=('black','white')), sg.Button('Quit', button_color=('black','white'))]
+            ]
+    window = sg.Window("Settings", layout, background_color='white', size=(WIDTH, HEIGHT), element_justification='c')
+    while True:
+        event, values = window.read(timeout=100)
+        if event in (sg.WIN_CLOSED, 'Quit'):
+            break
+        if event == 'Back':
+            window.close()
+            titleScreen()
+            return
+    window.close()
 
 if __name__ == '__main__':
+    server = connection.Server('LAN', lan_port)
+    server.start()
     titleScreen()
     if connection.Server.active: server.stop()
