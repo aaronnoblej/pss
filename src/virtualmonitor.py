@@ -62,6 +62,6 @@ def stream_from(host, port=5000):
             clock.tick(60)
     except ConnectionResetError:
         print('PSS was closed by the host.')
-        pygame.display.quit()
     finally:
         sock.close()
+        pygame.display.quit()

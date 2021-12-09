@@ -85,6 +85,8 @@ class Server:
                     result = res == 0
                     if result:
                         dev = socket.gethostbyaddr(addr)[0]
+                        if dev in self.found_devices:
+                            continue
                         print("Device found at", addr+":"+str(self.port))
                         self.found_devices.append(dev)
         else:

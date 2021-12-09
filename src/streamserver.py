@@ -31,28 +31,29 @@ class Stream:
     def __init__(self, host) -> None:
         self.host = host
     def retreive_screenshot(self, conn):
-        with mss() as sct:
-            # The region to capture
-            rect = {'top': 0, 'left': 0, 'width': WIDTH, 'height': HEIGHT}
+        try:
+            with mss() as sct:
+                # The region to capture
+                rect = {'top': 0, 'left': 0, 'width': WIDTH, 'height': HEIGHT}
 
-            while 'recording':
-                # Capture the screen
-                img = sct.grab(rect)
-                # Tweak the compression level here (0-9)
-                pixels = compress(img.rgb, 6)
+                while 'recording':
+                    # Capture the screen
+                    img = sct.grab(rect)
+                    # Tweak the compression level here (0-9)
+                    pixels = compress(img.rgb, 6)
 
-                # Send the size of the pixels length
-                size = len(pixels)
-                size_len = (size.bit_length() + 7) // 8
-                conn.send(bytes([size_len]))
+                    # Send the size of the pixels length
+                    size = len(pixels)
+                    size_len = (size.bit_length() + 7) // 8
+                    conn.send(bytes([size_len]))
 
-                # Send the actual pixels length
-                size_bytes = size.to_bytes(size_len, 'big')
-                conn.send(size_bytes)
+                    # Send the actual pixels length
+                    size_bytes = size.to_bytes(size_len, 'big')
+                    conn.send(size_bytes)
 
-                # Send pixels
-                conn.sendall(pixels)
-
+                    # Send pixels
+                    conn.sendall(pixels)
+        except ConnectionAbortedError: pass
 
     def start_stream(self, port=5000):
         sock = socket()
@@ -66,6 +67,7 @@ class Stream:
                 print('Client connected IP:', addr)
                 thread = Thread(target=self.retreive_screenshot, args=(conn,))
                 thread.start()
+        except ConnectionAbortedError: pass
         finally:
             sock.close()
 

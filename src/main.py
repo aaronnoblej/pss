@@ -166,6 +166,7 @@ def findDevicesScreen():
                 r = server.send_request(server.get_client_addr(client))
                 if r == -1:
                     sg.popup(f'Could not send a request to {client}.', background_color='white', text_color='black')
+                    server.found_devices.remove(client)
 
         # This must be put within each GUI loop - using another thread immensely slows down the program
         get_requests()
