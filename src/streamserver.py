@@ -53,7 +53,8 @@ class Stream:
 
                     # Send pixels
                     conn.sendall(pixels)
-        except ConnectionAbortedError: pass
+        except (ConnectionAbortedError, ConnectionResetError):
+            print('The screenshare was closed on client\'s end.')
 
     def start_stream(self, port=5000):
         sock = socket()
